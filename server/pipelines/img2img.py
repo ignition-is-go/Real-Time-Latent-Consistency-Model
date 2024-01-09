@@ -168,7 +168,7 @@ class Pipeline:
             guidance_scale=params.guidance_scale,
             width=params.width,
             height=params.height,
-            output_type="pil",
+            output_type="pt",
         )
 
         nsfw_content_detected = (
