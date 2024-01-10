@@ -176,7 +176,7 @@ class Pipeline:
 
         if args.sfast:
             print("\nRunning sfast compile\n")
-            from sfast.compilers.stable_diffusion_pipeline_compiler import (
+            from sfast.compilers.diffusion_pipeline_compiler import (
                 compile,
                 CompilationConfig,
             )

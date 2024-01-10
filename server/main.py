@@ -22,6 +22,8 @@ import torchvision.transforms
 
 THROTTLE = 1.0 / 120
 
+SIZE=512
+
 torch.backends.cuda.matmul.allow_tf32 = True
 
 class App:
@@ -102,14 +104,14 @@ class App:
 
 		@self.app.get("/api/stream/{user_id}")
 		async def stream(user_id: uuid.UUID, request: Request):
-			output_tensor = torch.ones((512, 512, 4), dtype=torch.uint8).mul(255).cuda()
-			in_tens = torch.zeros((512, 512, 4), dtype=torch.uint8).cuda()
-			output = g2c.texture(torch.ones((512, 512, 4), dtype=torch.uint8).cuda())
+			output_tensor = torch.ones((SIZE, SIZE, 4), dtype=torch.uint8).mul(255).cuda()
+			in_tens = torch.zeros((SIZE, SIZE, 4), dtype=torch.uint8).cuda()
+			output = g2c.texture(torch.ones((SIZE, SIZE, 4), dtype=torch.uint8).cuda())
 			g2c.set_global_texture(output)
-			noise = torch.rand(3, 512, 512)
+			noise = torch.rand(3, SIZE, SIZE)
 			noise_img  = torchvision.transforms.functional.to_pil_image(noise)
 			frame = pil_to_frame(noise_img)
-			handle = 2147501762
+			handle = 2147539650
 			input_texture = g2c.open_ipc_texture(handle)
 			print(output.ipc_handle)
 			try:
@@ -119,7 +121,6 @@ class App:
 					while True:
 						with input_texture as ptr: 
 							input_texture.copy_to(in_tens)
-							time.sleep(.016/4)
 
 						last_time = time.time()
 						await self.conn_manager.send_json(
@@ -135,8 +136,9 @@ class App:
 
 						for_img = without_alpha.permute(2, 0, 1).contiguous().mul(1/255).cuda()
 						params.image = for_img
-						params.width = 512
-						params.height = 512
+						params.width = SIZE
+						params.height = SIZE
+
 
 						pt_img = pipeline.predict(params)
 						if pt_img is None:

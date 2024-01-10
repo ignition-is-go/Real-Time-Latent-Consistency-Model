@@ -116,7 +116,7 @@ class Pipeline:
             self.pipe(prompt="warmup", num_inference_steps=1, guidance_scale=8.0)
 
         if args.sfast:
-            from sfast.compilers.stable_diffusion_pipeline_compiler import (
+            from sfast.compilers.diffusion_pipeline_compiler import (
                 compile,
                 CompilationConfig,
             )

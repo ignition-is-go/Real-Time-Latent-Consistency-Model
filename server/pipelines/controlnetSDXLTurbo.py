@@ -186,7 +186,7 @@ class Pipeline:
         self.canny_torch = SobelOperator(device=device)
 
         if args.sfast:
-            from sfast.compilers.stable_diffusion_pipeline_compiler import (
+            from sfast.compilers.diffusion_pipeline_compiler import (
                 compile,
                 CompilationConfig,
             )
@@ -271,7 +271,7 @@ class Pipeline:
             guidance_scale=params.guidance_scale,
             width=params.width,
             height=params.height,
-            output_type="pil",
+            output_type="pt",
             controlnet_conditioning_scale=params.controlnet_scale,
             control_guidance_start=params.controlnet_start,
             control_guidance_end=params.controlnet_end,

@@ -113,7 +113,7 @@ class Pipeline:
         self.pipe.to(device=device, dtype=torch_dtype).to(device)
 
         if args.sfast:
-            from sfast.compilers.stable_diffusion_pipeline_compiler import (
+            from sfast.compilers.diffusion_pipeline_compiler import (
                 compile,
                 CompilationConfig,
             )

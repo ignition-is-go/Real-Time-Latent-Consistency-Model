@@ -14,7 +14,7 @@ from config import Args
 from pydantic import BaseModel, Field
 from PIL import Image
 import math
-from sfast.compilers.stable_diffusion_pipeline_compiler import (
+from sfast.compilers.diffusion_pipeline_compiler import (
     compile,
     CompilationConfig,
 )
@@ -108,9 +108,10 @@ class Pipeline:
                 taesd_model, torch_dtype=torch_dtype, use_safetensors=True
             ).to(device)
 
+
         if args.sfast:
             print("\nRunning sfast compile\n")
-            from sfast.compilers.stable_diffusion_pipeline_compiler import (
+            from sfast.compilers.diffusion_pipeline_compiler import (
                 compile,
                 CompilationConfig,
             )
