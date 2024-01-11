@@ -39,7 +39,7 @@ class ConnectionManager:
             {"status": "connected", "message": "Connected"},
         )
         await websocket.send_json({"status": "wait"})
-        await websocket.send_json({"status": "send_frame"})
+        await websocket.send_json({"status": "ready"})
 
     def check_user(self, user_id: UUID) -> bool:
         return user_id in self.active_connections

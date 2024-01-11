@@ -11,6 +11,7 @@ from connection_manager import ConnectionManager, ServerFullException
 import uuid
 import time
 from types import SimpleNamespace
+from texture_manager import TextureManager
 from util import pil_to_frame, bytes_to_pil, get_pipeline_class
 from device import device, torch_dtype
 import asyncio
@@ -32,6 +33,15 @@ class App:
 		self.pipeline = pipeline
 		self.app = FastAPI()
 		self.conn_manager = ConnectionManager()
+		async def handleUpdateCallback(user_id, handle):
+			return await self.conn_manager.send_json(user_id, { 
+				"status": "output_handle",
+				"output_handle": handle
+			})
+		self.texture_manager = TextureManager(
+			on_handle_change=handleUpdateCallback, 
+			pipeline=pipeline
+		)
 		self.init_app()
 
 	def init_app(self):
@@ -43,7 +53,7 @@ class App:
 			allow_headers=["*"],
 		)
 
-		@self.app.websocket("/api/ws/{user_id}")
+		@self.app.websocket("/api/ws/{user_id}" )
 		async def websocket_endpoint(user_id: uuid.UUID, websocket: WebSocket):
 			try:
 				await self.conn_manager.connect(
@@ -54,6 +64,7 @@ class App:
 				logging.error(f"Server Full: {e}")
 			finally:
 				await self.conn_manager.disconnect(user_id)
+				self.texture_manager.cancel(user_id)
 				logging.info(f"User disconnected: {user_id}")
 
 		async def handle_websocket_data(user_id: uuid.UUID):
@@ -76,22 +87,19 @@ class App:
 						await self.conn_manager.disconnect(user_id)
 						return
 					data = await self.conn_manager.receive_json(user_id)
-					if data["status"] == "next_frame":
-						info = pipeline.Info()
-						params = await self.conn_manager.receive_json(user_id)
+					print(data)
+
+					if data["status"] == "source_info":
+						params = {}
 						params = pipeline.InputParams(**params)
 						params = SimpleNamespace(**params.dict())
-						if info.input_mode == "image":
-							image_data = await self.conn_manager.receive_bytes(user_id)
-							if len(image_data) == 0:
-								await self.conn_manager.send_json(
-									user_id, {"status": "send_frame"}
-								)
-								continue
-							params.image = bytes_to_pil(image_data)
-
-						await self.conn_manager.update_data(user_id, params)
-						await self.conn_manager.send_json(user_id, {"status": "wait"})
+						await self.texture_manager.update_info(
+							user_id, 
+							int(data["width"]), 
+							int(data["height"]), 
+							int(data["handle"]), 
+							params
+						)
 
 			except Exception as e:
 				logging.error(f"Websocket Error: {e}, {user_id} ")
@@ -107,7 +115,6 @@ class App:
 			output_tensor = torch.ones((SIZE, SIZE, 4), dtype=torch.uint8).mul(255).cuda()
 			in_tens = torch.zeros((SIZE, SIZE, 4), dtype=torch.uint8).cuda()
 			output = g2c.texture(torch.ones((SIZE, SIZE, 4), dtype=torch.uint8).cuda())
-			g2c.set_global_texture(output)
 			noise = torch.rand(3, SIZE, SIZE)
 			noise_img  = torchvision.transforms.functional.to_pil_image(noise)
 			frame = pil_to_frame(noise_img)
@@ -205,3 +212,4 @@ if __name__ == "__main__":
 		ssl_certfile=config.ssl_certfile,
 		ssl_keyfile=config.ssl_keyfile,
 	)
+	
