@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,7 +32,6 @@ class App:
 	def __init__(self, config: Args, pipeline):
 		self.args = config
 		self.pipeline = pipeline
-		self.app = FastAPI()
 		self.conn_manager = ConnectionManager()
 		async def handleUpdateCallback(user_id, handle):
 			return await self.conn_manager.send_json(user_id, { 
@@ -42,6 +42,14 @@ class App:
 			on_handle_change=handleUpdateCallback, 
 			pipeline=pipeline
 		)
+
+		@asynccontextmanager
+		async def lifespan(app: FastAPI):
+			yield
+			self.texture_manager.cancel_all()
+			return
+
+		self.app = FastAPI(lifespan=lifespan)
 		self.init_app()
 
 	def init_app(self):

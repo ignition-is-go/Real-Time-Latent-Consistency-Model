@@ -14,10 +14,12 @@ class TextureTransfer:
 		self.pipeline = pipeline
 		self.params = SimpleNamespace()
 		self.loopTask: asyncio.Future = None
+		self.cancelEvent: asyncio.Event = None
 
 	def cancel(self):
-		if self.loopTask:
+		if self.loopTask and self.cancelEvent:
 			self.loopTask.cancel()
+			self.cancelEvent.set()
 
 
 	def setInputTexture(self, source_handle: int):
@@ -51,6 +53,10 @@ class TextureTransfer:
 
 	def loop(self):
 		while True:
+
+			if self.cancelEvent.is_set():
+				return
+
 			with self.input_texture: 
 					self.input_texture.copy_to(self.input_tensor)
 		
@@ -74,6 +80,7 @@ class TextureTransfer:
 			time.sleep(1/60)
 	
 	async def run(self):
+		self.cancelEvent = asyncio.Event()
 		self.loopTask = asyncio.get_event_loop().run_in_executor(None, lambda:  self.loop())
 
 class TextureManager:
@@ -89,6 +96,11 @@ class TextureManager:
 			self.transfers[user_id].cancel()
 			del self.transfers[user_id]
 		return
+	
+	def cancel_all(self):
+		for user_id in self.transfers:
+			self.cancel(user_id)
+		return	
   
 	async def update_info(self, user_id: UUID, width: int, height: int, handle: int, params: SimpleNamespace):
 		if not user_id in self.transfers:
