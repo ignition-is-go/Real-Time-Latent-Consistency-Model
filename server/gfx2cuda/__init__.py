@@ -9,7 +9,7 @@ from gfx2cuda.format import TextureFormat
 from gfx2cuda.exception import Gfx2CudaError
 
 _instance = None
-_global_tex = None
+
 
 def _default_backend():
     if sys.platform == 'win32':
@@ -25,12 +25,8 @@ def _lazy_init(backend=None, **kwargs):
     if backend is not None and backend is not _instance.get_backend():
         raise Gfx2CudaError("Backend does not match initialized backend")
 
-def set_global_texture(tex):
-    global _global_tex
-    _global_tex = tex
 
 def texture(*args, **kwargs):
-    global _global_tex
     _lazy_init(**kwargs)
     fmt = None
     needs_copy = None
@@ -65,10 +61,7 @@ def texture(*args, **kwargs):
         dtype = kwargs.get('dtype', 'float')
         normalized = kwargs.get('normalized', False)
         fmt = TextureFormat.from_channels_and_dtype(dims[2], dtype, normalized)
-    
-    tex = _global_tex
-    if _global_tex is None: 
-        tex = _instance.create_texture(dims[1], dims[0], fmt, device=device)
+    tex = _instance.create_texture(dims[1], dims[0], fmt, device=device)
     if needs_copy is not None:
         with tex:
             if hasattr(needs_copy, '__cuda_array_interface__'):
