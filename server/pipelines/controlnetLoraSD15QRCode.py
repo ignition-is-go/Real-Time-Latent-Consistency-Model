@@ -6,7 +6,6 @@ from diffusers import (
 )
 from compel import Compel
 import torch
-from pipelines.utils.canny_gpu import SobelOperator
 
 try:
     import intel_extension_for_pytorch as ipex  # type: ignore
@@ -18,27 +17,24 @@ from config import Args
 from pydantic import BaseModel, Field
 from PIL import Image
 import math
-import time
 
-#
 taesd_model = "madebyollin/taesd"
-controlnet_model = "thibaud/controlnet-sd21-canny-diffusers"
+controlnet_model = "monster-labs/control_v1p_sd15_qrcode_monster"
+base_model = "nitrosocke/mo-di-diffusion"
 lcm_lora_id = "latent-consistency/lcm-lora-sdv1-5"
-base_model = "stabilityai/sd-turbo"
-
-default_prompt = "Portrait of The Joker halloween costume, face painting, with , glare pose, detailed, intricate, full of colour, cinematic lighting, trending on artstation, 8k, hyperrealistic, focused, extreme details, unreal engine 5 cinematic, masterpiece"
+default_prompt = "abstract art of a men with curly hair by Pablo Picasso"
 page_content = """
-<h1 class="text-3xl font-bold">Real-Time SDv2.1 Turbo</h1>
-<h3 class="text-xl font-bold">Image-to-Image ControlNet</h3>
+<h1 class="text-3xl font-bold">Real-Time Latent Consistency Model SDv1.5</h1>
+<h3 class="text-xl font-bold">LCM + LoRA + Controlnet + QRCode</h3>
 <p class="text-sm">
     This demo showcases
     <a
-    href="https://huggingface.co/stabilityai/sd-turbo"
+    href="https://huggingface.co/blog/lcm_lora"
     target="_blank"
-    class="text-blue-500 underline hover:no-underline">SD Turbo</a>
-Image to Image pipeline using
+    class="text-blue-500 underline hover:no-underline">LCM LoRA</a>
++ ControlNet + Image to Imasge pipeline using
     <a
-    href="https://huggingface.co/docs/diffusers/main/en/using-diffusers/sdxl_turbo"
+    href="https://huggingface.co/docs/diffusers/main/en/using-diffusers/lcm#performing-inference-with-lcm"
     target="_blank"
     class="text-blue-500 underline hover:no-underline">Diffusers</a
     > with a MJPEG stream server.
@@ -55,8 +51,8 @@ Image to Image pipeline using
 
 class Pipeline:
     class Info(BaseModel):
-        name: str = "controlnet+sd15Turbo"
-        title: str = "SDv1.5 Turbo + Controlnet"
+        name: str = "controlnet+loras+sd15"
+        title: str = "LCM + LoRA + Controlnet"
         description: str = "Generates an image from a text prompt"
         input_mode: str = "image"
         page_content: str = page_content
@@ -69,10 +65,10 @@ class Pipeline:
             id="prompt",
         )
         seed: int = Field(
-            4402026899276587, min=0, title="Seed", field="seed", hide=True, id="seed"
+            2159232, min=0, title="Seed", field="seed", hide=True, id="seed"
         )
         steps: int = Field(
-            1, min=1, max=15, title="Steps", field="range", hide=True, id="steps"
+            5, min=1, max=15, title="Steps", field="range", hide=True, id="steps"
         )
         width: int = Field(
             512, min=2, max=15, title="Width", disabled=True, hide=True, id="width"
@@ -81,9 +77,9 @@ class Pipeline:
             512, min=2, max=15, title="Height", disabled=True, hide=True, id="height"
         )
         guidance_scale: float = Field(
-            1.21,
+            1.0,
             min=0,
-            max=10,
+            max=2,
             step=0.001,
             title="Guidance Scale",
             field="range",
@@ -91,8 +87,8 @@ class Pipeline:
             id="guidance_scale",
         )
         strength: float = Field(
-            0.8,
-            min=0.10,
+            0.6,
+            min=0.25,
             max=1.0,
             step=0.001,
             title="Strength",
@@ -101,7 +97,7 @@ class Pipeline:
             id="strength",
         )
         controlnet_scale: float = Field(
-            0.325,
+            1.0,
             min=0,
             max=1.0,
             step=0.001,
@@ -130,101 +126,57 @@ class Pipeline:
             hide=True,
             id="controlnet_end",
         )
-        canny_low_threshold: float = Field(
-            0.31,
-            min=0,
+        blend: float = Field(
+            0.1,
+            min=0.0,
             max=1.0,
             step=0.001,
-            title="Canny Low Threshold",
+            title="Blend",
             field="range",
             hide=True,
-            id="canny_low_threshold",
-        )
-        canny_high_threshold: float = Field(
-            0.125,
-            min=0,
-            max=1.0,
-            step=0.001,
-            title="Canny High Threshold",
-            field="range",
-            hide=True,
-            id="canny_high_threshold",
-        )
-        debug_canny: bool = Field(
-            False,
-            title="Debug Canny",
-            field="checkbox",
-            hide=True,
-            id="debug_canny",
+            id="blend",
         )
 
     def __init__(self, args: Args, device: torch.device, torch_dtype: torch.dtype):
-        controlnet_canny = ControlNetModel.from_pretrained(
-            controlnet_model, torch_dtype=torch_dtype
-        )
-        self.pipes = {}
+        controlnet_qrcode = ControlNetModel.from_pretrained(
+            controlnet_model, torch_dtype=torch_dtype, subfolder="v2"
+        ).to(device)
 
         if args.safety_checker:
             self.pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
-                base_model, controlnet=controlnet_canny, torch_dtype=torch_dtype
+                base_model,
+                controlnet=controlnet_qrcode,
             )
         else:
             self.pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
                 base_model,
-                controlnet=controlnet_canny,
                 safety_checker=None,
-                torch_dtype=torch_dtype,
+                controlnet=controlnet_qrcode,
             )
 
-        if args.taesd:
-            self.pipe.vae = AutoencoderTiny.from_pretrained(
-                taesd_model, torch_dtype=torch_dtype, use_safetensors=True
-            ).to(device)
+        self.control_image = Image.open(
+            "qr-code.png").convert("RGB").resize((512, 512))
 
-        if args.sfast:
-            print("\nRunning sfast compile\n")
-            from sfast.compilers.diffusion_pipeline_compiler import (
-                compile,
-                CompilationConfig,
-            )
-
-            config = CompilationConfig.Default()
-            config.enable_xformers = True
-            config.enable_triton = True
-            config.enable_cuda_graph = True
-            self.pipe = compile(self.pipe, config=config)
-
-        if args.onediff:
-            print("\nRunning onediff compile\n")
-            from onediff.infer_compiler import oneflow_compile
-
-            self.pipe.unet = oneflow_compile(self.pipe.unet)
-            self.pipe.vae.encoder = oneflow_compile(self.pipe.vae.encoder)
-            self.pipe.vae.decoder = oneflow_compile(self.pipe.vae.decoder)
-            self.pipe.controlnet = oneflow_compile(self.pipe.controlnet)
-
-        self.canny_torch = SobelOperator(device=device)
-
-        self.pipe.scheduler = LCMScheduler.from_config(self.pipe.scheduler.config)
+        self.pipe.scheduler = LCMScheduler.from_config(
+            self.pipe.scheduler.config)
         self.pipe.set_progress_bar_config(disable=True)
-        self.pipe.to(device=device, dtype=torch_dtype)
         if device.type != "mps":
             self.pipe.unet.to(memory_format=torch.channels_last)
 
-        if args.compel:
-            from compel import Compel
-
-            self.pipe.compel_proc = Compel(
-                tokenizer=self.pipe.tokenizer,
-                text_encoder=self.pipe.text_encoder,
-                truncate_long_prompts=True,
-            )
-
         if args.taesd:
             self.pipe.vae = AutoencoderTiny.from_pretrained(
                 taesd_model, torch_dtype=torch_dtype, use_safetensors=True
             ).to(device)
 
+        # Load LCM LoRA
+        self.pipe.load_lora_weights(lcm_lora_id, adapter_name="lcm")
+        self.pipe.to(device=device, dtype=torch_dtype).to(device)
+        if args.compel:
+            self.compel_proc = Compel(
+                tokenizer=self.pipe.tokenizer,
+                text_encoder=self.pipe.text_encoder,
+                truncate_long_prompts=False,
+            )
         if args.torch_compile:
             self.pipe.unet = torch.compile(
                 self.pipe.unet, mode="reduce-overhead", fullgraph=True
@@ -234,29 +186,33 @@ class Pipeline:
             )
             self.pipe(
                 prompt="warmup",
-                image=[Image.new("RGB", (768, 768))],
-                control_image=[Image.new("RGB", (768, 768))],
+                image=[Image.new("RGB", (512, 512))],
+                control_image=[Image.new("RGB", (512, 512))],
             )
 
     def predict(self, params: "Pipeline.InputParams") -> Image.Image:
         generator = torch.manual_seed(params.seed)
-        prompt = params.prompt
+
+        prompt = f"modern disney style {params.prompt}"
         prompt_embeds = None
-        if hasattr(self.pipe, "compel_proc"):
-            prompt_embeds = self.pipe.compel_proc(
-                [params.prompt, params.negative_prompt]
-            )
+        prompt = params.prompt
+        if hasattr(self, "compel_proc"):
+            prompt_embeds = self.compel_proc(prompt)
             prompt = None
-        control_image = self.canny_torch(
-            params.image, params.canny_low_threshold, params.canny_high_threshold
-        )
+
         steps = params.steps
         strength = params.strength
         if int(steps * strength) < 1:
             steps = math.ceil(1 / max(0.10, strength))
+
+        blend_qr_image = Image.blend(
+            params.image,
+            self.control_image,
+            alpha=params.blend
+        )
         results = self.pipe(
-            image=params.image,
-            control_image=control_image,
+            image=blend_qr_image,
+            control_image=self.control_image,
             prompt=prompt,
             prompt_embeds=prompt_embeds,
             generator=generator,
@@ -265,11 +221,12 @@ class Pipeline:
             guidance_scale=params.guidance_scale,
             width=params.width,
             height=params.height,
-            output_type="pt",
+            output_type="pil",
             controlnet_conditioning_scale=params.controlnet_scale,
             control_guidance_start=params.controlnet_start,
             control_guidance_end=params.controlnet_end,
         )
+
         nsfw_content_detected = (
             results.nsfw_content_detected[0]
             if "nsfw_content_detected" in results
@@ -278,11 +235,5 @@ class Pipeline:
         if nsfw_content_detected:
             return None
         result_image = results.images[0]
-        if params.debug_canny:
-            # paste control_image on top of result_image
-            w0, h0 = (200, 200)
-            control_image = control_image.resize((w0, h0))
-            w1, h1 = result_image.size
-            result_image.paste(control_image, (w1 - w0, h1 - h0))
 
         return result_image

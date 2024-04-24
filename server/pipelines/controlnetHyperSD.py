@@ -1,13 +1,13 @@
 from diffusers import (
-    StableDiffusionXLControlNetImg2ImgPipeline,
+    StableDiffusionControlNetImg2ImgPipeline,
     ControlNetModel,
-    LCMScheduler,
-    AutoencoderKL,
-    AutoencoderTiny,
+    TCDScheduler,
+    DDIMScheduler,
 )
 from compel import Compel, ReturnedEmbeddingsType
 import torch
 from pipelines.utils.canny_gpu import SobelOperator
+from huggingface_hub import hf_hub_download
 
 try:
     import intel_extension_for_pytorch as ipex  # type: ignore
@@ -20,44 +20,23 @@ from pydantic import BaseModel, Field
 from PIL import Image
 import math
 
-controlnet_model = "diffusers/controlnet-canny-sdxl-1.0"
-model_id = "stabilityai/stable-diffusion-xl-base-1.0"
-lcm_lora_id = "latent-consistency/lcm-lora-sdxl"
-taesd_model = "madebyollin/taesdxl"
 
+controlnet_model = "lllyasviel/control_v11p_sd15_canny"
+model_id = "runwayml/stable-diffusion-v1-5"
+taesd_model = "madebyollin/taesdxl"
 
 default_prompt = "Portrait of The Terminator with , glare pose, detailed, intricate, full of colour, cinematic lighting, trending on artstation, 8k, hyperrealistic, focused, extreme details, unreal engine 5 cinematic, masterpiece"
 default_negative_prompt = "blurry, low quality, render, 3D, oversaturated"
 page_content = """
-<h1 class="text-3xl font-bold">Real-Time Latent Consistency Model SDXL</h1>
-<h3 class="text-xl font-bold">SDXL + LCM + LoRA + Controlnet</h3>
-<p class="text-sm">
-    This demo showcases
-    <a
-    href="https://huggingface.co/blog/lcm_lora"
-    target="_blank"
-    class="text-blue-500 underline hover:no-underline">LCM LoRA</a>
-+ SDXL + Controlnet + Image to Image pipeline using
-    <a
-    href="https://huggingface.co/docs/diffusers/main/en/using-diffusers/lcm#performing-inference-with-lcm"
-    target="_blank"
-    class="text-blue-500 underline hover:no-underline">Diffusers</a
-    > with a MJPEG stream server.
-</p>
-<p class="text-sm text-gray-500">
-    Change the prompt to generate different images, accepts <a
-    href="https://github.com/damian0815/compel/blob/main/doc/syntax.md"
-    target="_blank"
-    class="text-blue-500 underline hover:no-underline">Compel</a
-    > syntax.
-</p>
+<h1 class="text-3xl font-bold">Hyper-SD15 Unified</h1>
+<h3 class="text-xl font-bold">Image-to-Image ControlNet</h3>
 """
 
 
 class Pipeline:
     class Info(BaseModel):
-        name: str = "controlnet+loras+sdxl"
-        title: str = "SDXL + LCM + LoRA + Controlnet"
+        name: str = "controlnet+SDXL+Turbo"
+        title: str = "SDXL Turbo + Controlnet"
         description: str = "Generates an image from a text prompt"
         input_mode: str = "image"
         page_content: str = page_content
@@ -80,7 +59,7 @@ class Pipeline:
             2159232, min=0, title="Seed", field="seed", hide=True, id="seed"
         )
         steps: int = Field(
-            1, min=1, max=10, title="Steps", field="range", hide=True, id="steps"
+            2, min=1, max=15, title="Steps", field="range", hide=True, id="steps"
         )
         width: int = Field(
             512, min=2, max=15, title="Width", disabled=True, hide=True, id="width"
@@ -89,9 +68,9 @@ class Pipeline:
             512, min=2, max=15, title="Height", disabled=True, hide=True, id="height"
         )
         guidance_scale: float = Field(
-            1.0,
+            0.0,
             min=0,
-            max=2.0,
+            max=10,
             step=0.001,
             title="Guidance Scale",
             field="range",
@@ -99,14 +78,24 @@ class Pipeline:
             id="guidance_scale",
         )
         strength: float = Field(
-            1,
+            0.5,
             min=0.25,
             max=1.0,
-            step=0.0001,
+            step=0.001,
             title="Strength",
             field="range",
             hide=True,
             id="strength",
+        )
+        eta: float = Field(
+            1.0,
+            min=0,
+            max=1.0,
+            step=0.001,
+            title="Eta",
+            field="range",
+            hide=True,
+            id="eta",
         )
         controlnet_scale: float = Field(
             0.5,
@@ -169,40 +158,31 @@ class Pipeline:
     def __init__(self, args: Args, device: torch.device, torch_dtype: torch.dtype):
         controlnet_canny = ControlNetModel.from_pretrained(
             controlnet_model, torch_dtype=torch_dtype
-        ).to(device)
-        vae = AutoencoderKL.from_pretrained(
-            "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch_dtype
         )
+
         if args.safety_checker:
-            self.pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
-                model_id,
-                controlnet=controlnet_canny,
-                vae=vae,
+            self.pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                model_id, controlnet=controlnet_canny, vae=vae, torch_dtype=torch_dtype
             )
         else:
-            self.pipe = StableDiffusionXLControlNetImg2ImgPipeline.from_pretrained(
+            self.pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
                 model_id,
                 safety_checker=None,
                 controlnet=controlnet_canny,
-                vae=vae,
+                torch_dtype=torch_dtype,
             )
-        self.canny_torch = SobelOperator(device=device)
-        # Load LCM LoRA
-        self.pipe.load_lora_weights(lcm_lora_id, adapter_name="lcm")
-        self.pipe.load_lora_weights(
-            "CiroN2022/toy-face",
-            weight_name="toy_face_sdxl.safetensors",
-            adapter_name="toy",
-        )
-        self.pipe.set_adapters(["lcm", "toy"], adapter_weights=[1.0, 0.8])
 
-        self.pipe.scheduler = LCMScheduler.from_config(
-            self.pipe.scheduler.config)
-        self.pipe.set_progress_bar_config(disable=True)
-        self.pipe.to(device=device, dtype=torch_dtype).to(device)
+        self.pipe.load_lora_weights(
+            hf_hub_download("ByteDance/Hyper-SD", "Hyper-SD15-1step-lora.safetensors")
+        )
+
+        self.pipe.scheduler = TCDScheduler.from_config(self.pipe.scheduler.config)
+
+        self.pipe.fuse_lora()
+        self.canny_torch = SobelOperator(device=device)
 
         if args.sfast:
-            from sfast.compilers.diffusion_pipeline_compiler import (
+            from sfast.compilers.stable_diffusion_pipeline_compiler import (
                 compile,
                 CompilationConfig,
             )
@@ -213,22 +193,18 @@ class Pipeline:
             config.enable_cuda_graph = True
             self.pipe = compile(self.pipe, config=config)
 
+        self.pipe.set_progress_bar_config(disable=True)
+        self.pipe.to(device=device)
         if device.type != "mps":
             self.pipe.unet.to(memory_format=torch.channels_last)
 
         if args.compel:
             self.pipe.compel_proc = Compel(
                 tokenizer=[self.pipe.tokenizer, self.pipe.tokenizer_2],
-                text_encoder=[self.pipe.text_encoder,
-                              self.pipe.text_encoder_2],
+                text_encoder=[self.pipe.text_encoder, self.pipe.text_encoder_2],
                 returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
                 requires_pooled=[False, True],
             )
-
-        if args.taesd:
-            self.pipe.vae = AutoencoderTiny.from_pretrained(
-                taesd_model, torch_dtype=torch_dtype, use_safetensors=True
-            ).to(device)
 
         if args.torch_compile:
             self.pipe.unet = torch.compile(
@@ -282,11 +258,12 @@ class Pipeline:
             negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
             generator=generator,
             strength=strength,
+            eta=params.eta,
             num_inference_steps=steps,
             guidance_scale=params.guidance_scale,
             width=params.width,
             height=params.height,
-            output_type="pt",
+            output_type="pil",
             controlnet_conditioning_scale=params.controlnet_scale,
             control_guidance_start=params.controlnet_start,
             control_guidance_end=params.controlnet_end,

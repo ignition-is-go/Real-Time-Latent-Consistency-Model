@@ -1,7 +1,5 @@
-from diffusers import (
-    AutoPipelineForImage2Image,
-    AutoencoderTiny,
-)
+from diffusers import AutoPipelineForImage2Image, AutoencoderTiny
+from compel import Compel
 import torch
 
 try:
@@ -14,28 +12,23 @@ from config import Args
 from pydantic import BaseModel, Field
 from PIL import Image
 import math
-from sfast.compilers.diffusion_pipeline_compiler import (
-    compile,
-    CompilationConfig,
-)
 
-base_model = "stabilityai/sd-turbo"
+base_model = "IDKiro/sdxs-512-0.9"
 taesd_model = "madebyollin/taesd"
 
-default_prompt = "close-up photography of old man standing in the rain at night, in a street lit by lamps, leica 35mm summilux"
-default_negative_prompt = "blurry, low quality, render, 3D, oversaturated"
+default_prompt = "Portrait of The Terminator with , glare pose, detailed, intricate, full of colour, cinematic lighting, trending on artstation, 8k, hyperrealistic, focused, extreme details, unreal engine 5 cinematic, masterpiece"
 page_content = """
-<h1 class="text-3xl font-bold">Real-Time SD-Turbo</h1>
-<h3 class="text-xl font-bold">Image-to-Image</h3>
+<h1 class="text-3xl font-bold">Real-Time Latent SDXS</h1>
+<h3 class="text-xl font-bold">Image-to-Image SDXS</h3>
 <p class="text-sm">
     This demo showcases
     <a
-    href="https://huggingface.co/stabilityai/sdxl-turbo"
+    href="https://huggingface.co/blog/lcm_lora"
     target="_blank"
-    class="text-blue-500 underline hover:no-underline">SDXL Turbo</a>
+    class="text-blue-500 underline hover:no-underline">LCM</a>
 Image to Image pipeline using
     <a
-    href="https://huggingface.co/docs/diffusers/main/en/using-diffusers/sdxl_turbo"
+    href="https://huggingface.co/docs/diffusers/main/en/using-diffusers/lcm#performing-inference-with-lcm"
     target="_blank"
     class="text-blue-500 underline hover:no-underline">Diffusers</a
     > with a MJPEG stream server.
@@ -53,7 +46,7 @@ Image to Image pipeline using
 class Pipeline:
     class Info(BaseModel):
         name: str = "img2img"
-        title: str = "Image-to-Image SDXL"
+        title: str = "Image-to-Image SDXS"
         description: str = "Generates an image from a text prompt"
         input_mode: str = "image"
         page_content: str = page_content
@@ -64,13 +57,6 @@ class Pipeline:
             title="Prompt",
             field="textarea",
             id="prompt",
-        )
-        negative_prompt: str = Field(
-            default_negative_prompt,
-            title="Negative Prompt",
-            field="textarea",
-            id="negative_prompt",
-            hide=True,
         )
         seed: int = Field(
             2159232, min=0, title="Seed", field="seed", hide=True, id="seed"
@@ -83,6 +69,16 @@ class Pipeline:
         )
         height: int = Field(
             512, min=2, max=15, title="Height", disabled=True, hide=True, id="height"
+        )
+        guidance_scale: float = Field(
+            0.0,
+            min=0,
+            max=20,
+            step=0.001,
+            title="Guidance Scale",
+            field="range",
+            hide=True,
+            id="guidance_scale",
         )
         strength: float = Field(
             0.5,
@@ -108,15 +104,8 @@ class Pipeline:
                 taesd_model, torch_dtype=torch_dtype, use_safetensors=True
             ).to(device)
 
-
         if args.sfast:
             from sfast.compilers.stable_diffusion_pipeline_compiler import (
-                compile,
-                CompilationConfig,
-            )
-
-            print("\nRunning sfast compile\n")
-            from sfast.compilers.diffusion_pipeline_compiler import (
                 compile,
                 CompilationConfig,
             )
@@ -126,14 +115,6 @@ class Pipeline:
             config.enable_triton = True
             config.enable_cuda_graph = True
             self.pipe = compile(self.pipe, config=config)
-
-        if args.onediff:
-            print("\nRunning onediff compile\n")
-            from onediff.infer_compiler import oneflow_compile
-
-            self.pipe.unet = oneflow_compile(self.pipe.unet)
-            self.pipe.vae.encoder = oneflow_compile(self.pipe.vae.encoder)
-            self.pipe.vae.decoder = oneflow_compile(self.pipe.vae.decoder)
 
         self.pipe.set_progress_bar_config(disable=True)
         self.pipe.to(device=device, dtype=torch_dtype)
@@ -153,42 +134,33 @@ class Pipeline:
                 prompt="warmup",
                 image=[Image.new("RGB", (768, 768))],
             )
-        if args.compel:
-            from compel import Compel
 
-            self.pipe.compel_proc = Compel(
+        if args.compel:
+            self.compel_proc = Compel(
                 tokenizer=self.pipe.tokenizer,
                 text_encoder=self.pipe.text_encoder,
-                truncate_long_prompts=True,
+                truncate_long_prompts=False,
             )
 
     def predict(self, params: "Pipeline.InputParams") -> Image.Image:
         generator = torch.manual_seed(params.seed)
-        steps = params.steps
-        strength = params.strength
-        if int(steps * strength) < 1:
-            steps = math.ceil(1 / max(0.10, strength))
-
-        prompt = params.prompt
         prompt_embeds = None
-        if hasattr(self.pipe, "compel_proc"):
-            prompt_embeds = self.pipe.compel_proc(
-                [params.prompt, params.negative_prompt]
-            )
+        prompt = params.prompt
+        if hasattr(self, "compel_proc"):
+            prompt_embeds = self.compel_proc(params.prompt)
             prompt = None
 
         results = self.pipe(
             image=params.image,
-            prompt_embeds=prompt_embeds,
             prompt=prompt,
-            negative_prompt=params.negative_prompt,
+            prompt_embeds=prompt_embeds,
             generator=generator,
-            strength=strength,
-            num_inference_steps=steps,
-            guidance_scale=1.1,
+            strength=params.strength,
+            num_inference_steps=params.steps,
+            guidance_scale=params.guidance_scale,
             width=params.width,
             height=params.height,
-            output_type="pt",
+            output_type="pil",
         )
 
         nsfw_content_detected = (
