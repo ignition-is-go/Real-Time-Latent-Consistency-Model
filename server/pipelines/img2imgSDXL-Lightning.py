@@ -1,4 +1,10 @@
-from diffusers import DiffusionPipeline, LCMScheduler, AutoencoderKL, AutoencoderTiny
+from diffusers import (
+    AutoPipelineForImage2Image,
+    AutoencoderTiny,
+    AutoencoderKL,
+    UNet2DConditionModel,
+    EulerDiscreteScheduler,
+)
 from compel import Compel, ReturnedEmbeddingsType
 import torch
 
@@ -7,31 +13,33 @@ try:
 except:
     pass
 
-import psutil
+from safetensors.torch import load_file
+from huggingface_hub import hf_hub_download
 from config import Args
 from pydantic import BaseModel, Field
 from PIL import Image
+import math
 
-model_id = "stabilityai/stable-diffusion-xl-base-1.0"
-lcm_lora_id = "latent-consistency/lcm-lora-sdxl"
+base = "stabilityai/stable-diffusion-xl-base-1.0"
+repo = "ByteDance/SDXL-Lightning"
+ckpt = "sdxl_lightning_2step_unet.safetensors"
 taesd_model = "madebyollin/taesdxl"
-
+NUM_STEPS = 2
 
 default_prompt = "close-up photography of old man standing in the rain at night, in a street lit by lamps, leica 35mm summilux"
 default_negative_prompt = "blurry, low quality, render, 3D, oversaturated"
 page_content = """
-<h1 class="text-3xl font-bold">Real-Time Latent Consistency Model</h1>
-<h3 class="text-xl font-bold">Text-to-Image SDXL + LCM + LoRA</h3>
+<h1 class="text-3xl font-bold">Real-Time SDXL Lightning</h1>
+<h3 class="text-xl font-bold">Image-to-Image</h3>
 <p class="text-sm">
     This demo showcases
     <a
-    href="https://huggingface.co/blog/lcm_lora"
+    href="https://huggingface.co/stabilityai/sdxl-turbo"
     target="_blank"
-    class="text-blue-500 underline hover:no-underline">LCM LoRA</a
-    >
-    Text to Image pipeline using
+    class="text-blue-500 underline hover:no-underline">SDXL Turbo</a>
+Image to Image pipeline using
     <a
-    href="https://huggingface.co/docs/diffusers/main/en/using-diffusers/lcm#performing-inference-with-lcm"
+    href="https://huggingface.co/docs/diffusers/main/en/using-diffusers/sdxl_turbo"
     target="_blank"
     class="text-blue-500 underline hover:no-underline">Diffusers</a
     > with a MJPEG stream server.
@@ -48,11 +56,11 @@ page_content = """
 
 class Pipeline:
     class Info(BaseModel):
-        name: str = "LCM+Lora+SDXL"
-        title: str = "Text-to-Image SDXL + LCM + LoRA"
+        name: str = "img2img"
+        title: str = "Image-to-Image SDXL-Lightning"
         description: str = "Generates an image from a text prompt"
+        input_mode: str = "image"
         page_content: str = page_content
-        input_mode: str = "text"
 
     class InputParams(BaseModel):
         prompt: str = Field(
@@ -72,7 +80,7 @@ class Pipeline:
             2159232, min=0, title="Seed", field="seed", hide=True, id="seed"
         )
         steps: int = Field(
-            4, min=1, max=15, title="Steps", field="range", hide=True, id="steps"
+            1, min=1, max=10, title="Steps", field="range", hide=True, id="steps"
         )
         width: int = Field(
             1024, min=2, max=15, title="Width", disabled=True, hide=True, id="width"
@@ -81,36 +89,51 @@ class Pipeline:
             1024, min=2, max=15, title="Height", disabled=True, hide=True, id="height"
         )
         guidance_scale: float = Field(
-            1.0,
+            0.0,
             min=0,
-            max=20,
+            max=1,
             step=0.001,
             title="Guidance Scale",
             field="range",
             hide=True,
             id="guidance_scale",
         )
+        strength: float = Field(
+            0.5,
+            min=0.25,
+            max=1.0,
+            step=0.001,
+            title="Strength",
+            field="range",
+            hide=True,
+            id="strength",
+        )
 
     def __init__(self, args: Args, device: torch.device, torch_dtype: torch.dtype):
-        vae = AutoencoderKL.from_pretrained(
-            "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch_dtype
-        )
-        if args.safety_checker:
-            self.pipe = DiffusionPipeline.from_pretrained(
-                model_id,
-                vae=vae,
+
+        if args.taesd:
+            vae = AutoencoderTiny.from_pretrained(
+                taesd_model, torch_dtype=torch_dtype, use_safetensors=True
             )
         else:
-            self.pipe = DiffusionPipeline.from_pretrained(
-                model_id,
-                safety_checker=None,
-                vae=vae,
+            vae = AutoencoderKL.from_pretrained(
+                "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch_dtype
             )
-        # Load LCM LoRA
-        self.pipe.load_lora_weights(lcm_lora_id, adapter_name="lcm")
-        self.pipe.scheduler = LCMScheduler.from_config(self.pipe.scheduler.config)
-        self.pipe.set_progress_bar_config(disable=True)
-        self.pipe.to(device=device, dtype=torch_dtype).to(device)
+
+        unet = UNet2DConditionModel.from_config(base, subfolder="unet")
+        unet.load_state_dict(load_file(hf_hub_download(repo, ckpt), device=device.type))
+        self.pipe = AutoPipelineForImage2Image.from_pretrained(
+            base,
+            unet=unet,
+            torch_dtype=torch_dtype,
+            variant="fp16",
+            safety_checker=False,
+            vae=vae,
+        )
+        # Ensure sampler uses "trailing" timesteps.
+        self.pipe.scheduler = EulerDiscreteScheduler.from_config(
+            self.pipe.scheduler.config, timestep_spacing="trailing"
+        )
 
         if args.sfast:
             from sfast.compilers.diffusion_pipeline_compiler import (
@@ -124,21 +147,13 @@ class Pipeline:
             config.enable_cuda_graph = True
             self.pipe = compile(self.pipe, config=config)
 
+        self.pipe.set_progress_bar_config(disable=True)
+        self.pipe.to(device=device, dtype=torch_dtype)
         if device.type != "mps":
             self.pipe.unet.to(memory_format=torch.channels_last)
 
-        self.pipe.compel_proc = Compel(
-            tokenizer=[self.pipe.tokenizer, self.pipe.tokenizer_2],
-            text_encoder=[self.pipe.text_encoder, self.pipe.text_encoder_2],
-            returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
-            requires_pooled=[False, True],
-        )
-        if args.taesd:
-            self.pipe.vae = AutoencoderTiny.from_pretrained(
-                taesd_model, torch_dtype=torch_dtype, use_safetensors=True
-            ).to(device)
-
         if args.torch_compile:
+            print("Running torch compile")
             self.pipe.unet = torch.compile(
                 self.pipe.unet, mode="reduce-overhead", fullgraph=True
             )
@@ -147,11 +162,19 @@ class Pipeline:
             )
             self.pipe(
                 prompt="warmup",
+                image=[Image.new("RGB", (768, 768))],
+            )
+
+        if args.compel:
+            self.pipe.compel_proc = Compel(
+                tokenizer=[self.pipe.tokenizer, self.pipe.tokenizer_2],
+                text_encoder=[self.pipe.text_encoder, self.pipe.text_encoder_2],
+                returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
+                requires_pooled=[False, True],
             )
 
     def predict(self, params: "Pipeline.InputParams") -> Image.Image:
         generator = torch.manual_seed(params.seed)
-
         prompt = params.prompt
         negative_prompt = params.negative_prompt
         prompt_embeds = None
@@ -169,7 +192,13 @@ class Pipeline:
             negative_prompt_embeds = _prompt_embeds[1:2]
             negative_pooled_prompt_embeds = pooled_prompt_embeds[1:2]
 
+        steps = params.steps
+        strength = params.strength
+        if int(steps * strength) < 1:
+            steps = math.ceil(1 / max(0.10, strength))
+
         results = self.pipe(
+            image=params.image,
             prompt=prompt,
             negative_prompt=negative_prompt,
             prompt_embeds=prompt_embeds,
@@ -177,12 +206,12 @@ class Pipeline:
             negative_prompt_embeds=negative_prompt_embeds,
             negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
             generator=generator,
-            num_inference_steps=params.steps,
+            strength=strength,
+            num_inference_steps=steps,
             guidance_scale=params.guidance_scale,
             width=params.width,
             height=params.height,
-            image=params.image,
-            output_type="rt",
+            output_type="pt",
         )
 
         nsfw_content_detected = (

@@ -112,7 +112,7 @@ class Pipeline:
             )
         if args.taesd:
             self.pipe.vae = AutoencoderTiny.from_pretrained(
-                taesd_model, torch_dtype=torch_dtype, use_safetensors=True
+                taesd_model, torch_dtype=torch.float16, use_safetensors=True
             ).to(device)
 
         if args.sfast:
@@ -128,7 +128,7 @@ class Pipeline:
             self.pipe = compile(self.pipe, config=config)
 
         self.pipe.set_progress_bar_config(disable=True)
-        self.pipe.to(device=device, dtype=torch_dtype)
+        self.pipe.to(device=device, dtype=torch.float16)
         if device.type != "mps":
             self.pipe.unet.to(memory_format=torch.channels_last)
 

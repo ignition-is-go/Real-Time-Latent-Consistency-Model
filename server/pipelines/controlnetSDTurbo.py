@@ -23,6 +23,7 @@ import time
 #
 taesd_model = "madebyollin/taesd"
 controlnet_model = "thibaud/controlnet-sd21-canny-diffusers"
+lcm_lora_id = "latent-consistency/lcm-lora-sdv1-5"
 base_model = "stabilityai/sd-turbo"
 
 default_prompt = "Portrait of The Joker halloween costume, face painting, with , glare pose, detailed, intricate, full of colour, cinematic lighting, trending on artstation, 8k, hyperrealistic, focused, extreme details, unreal engine 5 cinematic, masterpiece"
@@ -265,7 +266,7 @@ class Pipeline:
             guidance_scale=params.guidance_scale,
             width=params.width,
             height=params.height,
-            output_type="pil",
+            output_type="pt",
             controlnet_conditioning_scale=params.controlnet_scale,
             control_guidance_start=params.controlnet_start,
             control_guidance_end=params.controlnet_end,

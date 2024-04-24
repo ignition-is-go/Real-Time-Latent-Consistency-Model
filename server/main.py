@@ -1,9 +1,8 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, WebSocket, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi import Request
 import markdown2
 
 import logging
@@ -13,14 +12,12 @@ import uuid
 import time
 from types import SimpleNamespace
 from texture_manager import TextureManager
-from util import pil_to_frame, bytes_to_pil, get_pipeline_class
+from util import get_pipeline_class
 from device import device, torch_dtype
-import asyncio
 import os
 import time
 import torch
 import gfx2cuda as g2c
-import torchvision.transforms
 
 THROTTLE = 1.0 / 120
 
@@ -105,6 +102,7 @@ class App:
 						params.negative_prompt = data["negative_prompt"]
 						params.steps = data["steps"]
 						params.strength = data["strength"]
+						params.guidance_scale = data["guidance_scale"]
 						await self.texture_manager.update_info(
 							user_id, 
 							int(data["width"]), 
