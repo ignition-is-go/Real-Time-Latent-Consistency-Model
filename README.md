@@ -21,7 +21,7 @@ See a collecting with live demos [here](https://huggingface.co/collections/laten
 
 You need CUDA and Python 3.10, Node > 19, Mac with an M1/M2/M3 chip or Intel Arc GPU
 
-## Install
+## Install (Deprecated)
 
 ```bash
 python -m venv venv
@@ -41,6 +41,7 @@ cd frontend && npm install && npm run build && cd ..
 
 ```bash
 conda create -n rtlcm python=3.10
+conda activate rtlcm
 python -m pip install --upgrade pip
 pip3 install -r server/requirements.txt
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
