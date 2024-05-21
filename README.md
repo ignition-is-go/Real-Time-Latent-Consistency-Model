@@ -11,17 +11,19 @@ conda create -n rtlcm python=3.10
 conda activate rtlcm
 python3 -m pip install --upgrade pip
 install.bat
-python3 main.py --reload --pipeline img2imgSDXL-Lightning
+python3 main.py --reload --pipeline img2imgSDXL-Lightning --sfast --onediff
 ```
 
 ## Gfx2Cuda
 
 This implementation of RTLCM uses Gfx2Cuda to write tensors directly to texture buffers. Currently, Gfx2Cuda only supports DX11.
+
 https://github.com/SvenDH/gfx2cuda
 
 # Available Pipelines
 
 See ./pipelines
+
 When using the --pipeline flag, use the name of the file without the .py extension
 E.g. --pipeline img2imgSDXL-Lightning
 
