@@ -4,6 +4,8 @@ title: RTLCM-Gfx2Cuda
 
 # Real-Time Latent Consistency Model
 
+A fork of https://github.com/radames/Real-Time-Latent-Consistency-Model
+
 ## Running Locally
 
 You need Windows, DX11, CUDA, and Python 3.10
@@ -46,46 +48,6 @@ E.g. --pipeline img2imgSDXL-Lightning
 - `--compel`: Compel option
 - `--sfast`: Enable Stable Fast
 - `--onediff`: Enable OneDiff
-
-If you run using `bash build-run.sh` you can set `PIPELINE` variables to choose the pipeline you want to run
-
-```bash
-PIPELINE=txt2imgLoraSDXL bash build-run.sh
-```
-
-and setting environment variables
-
-```bash
-TIMEOUT=120 SAFETY_CHECKER=True MAX_QUEUE_SIZE=4 python server/main.py --reload --pipeline txt2imgLoraSDXL
-```
-
-If you're running locally and want to test it on Mobile Safari, the webserver needs to be served over HTTPS, or follow this instruction on my [comment](https://github.com/radames/Real-Time-Latent-Consistency-Model/issues/17#issuecomment-1811957196)
-
-```bash
-openssl req -newkey rsa:4096 -nodes -keyout key.pem -x509 -days 365 -out certificate.pem
-python server/main.py --reload --ssl-certfile=certificate.pem --ssl-keyfile=key.pem
-```
-
-## Docker
-
-You need NVIDIA Container Toolkit for Docker, defaults to `controlnet``
-
-```bash
-docker build -t lcm-live .
-docker run -ti -p 7860:7860 --gpus all lcm-live
-```
-
-reuse models data from host to avoid downloading them again, you can change `~/.cache/huggingface` to any other directory, but if you use hugingface-cli locally, you can share the same cache
-
-```bash
-docker run -ti -p 7860:7860 -e HF_HOME=/data -v ~/.cache/huggingface:/data  --gpus all lcm-live
-```
-
-or with environment variables
-
-```bash
-docker run -ti -e PIPELINE=txt2imgLoraSDXL -p 7860:7860 --gpus all lcm-live
-```
 
 # Demo on Hugging Face
 
