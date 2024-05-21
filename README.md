@@ -1,134 +1,33 @@
 ---
-title: Real-Time Latent Consistency Model Image-to-Image ControlNet
-emoji: 🖼️🖼️
-colorFrom: gray
-colorTo: indigo
-sdk: docker
-pinned: false
-suggested_hardware: a10g-small
-disable_embedding: true
+title: RTLCM-Gfx2Cuda
 ---
 
 # Real-Time Latent Consistency Model
 
-This demo showcases [Latent Consistency Model (LCM)](https://latent-consistency-models.github.io/) using [Diffusers](https://huggingface.co/docs/diffusers/using-diffusers/lcm) with a MJPEG stream server. You can read more about LCM + LoRAs with diffusers [here](https://huggingface.co/blog/lcm_lora).
-
-You need a webcam to run this demo. 🤗
-
-See a collecting with live demos [here](https://huggingface.co/collections/latent-consistency/latent-consistency-model-demos-654e90c52adb0688a0acbe6f)
-
 ## Running Locally
 
-You need CUDA and Python 3.10, Node > 19, Mac with an M1/M2/M3 chip or Intel Arc GPU
+You need Windows, DX11, CUDA, and Python 3.10
 
-## Install (Deprecated)
-
-```bash
-python -m venv venv
-source venv/bin/activate
-pip3 install -r server/requirements.txt
-cd frontend && npm install && npm run build && cd ..
-python server/main.py --reload --pipeline img2imgSDTurbo
-```
-
-Don't forget to fuild the frontend!!!
-
-```bash
-cd frontend && npm install && npm run build && cd ..
-```
-
-## ACTUAL INSTALL
+## Installation and Usage Example (Using Conda)
 
 ```bash
 conda create -n rtlcm python=3.10
 conda activate rtlcm
-python -m pip install --upgrade pip
-pip3 install -r server/requirements.txt
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-python server/main.py --reload --pipeline img2imgSDXL-Lightning
+python3 -m pip install --upgrade pip
+install.bat
+python3 main.py --reload --pipeline img2imgSDXL-Lightning
 ```
 
-# Pipelines
+## Gfx2Cuda
 
-You can build your own pipeline following examples here [here](pipelines),
-
-# LCM
-
-### Image to Image
-
-```bash
-python server/main.py --reload --pipeline img2img
-```
-
-# LCM
-
-### Text to Image
-
-```bash
-python server/main.py --reload --pipeline txt2img
-```
-
-### Image to Image ControlNet Canny
-
-```bash
-python server/main.py --reload --pipeline controlnet
-```
-
-# LCM + LoRa
-
-Using LCM-LoRA, giving it the super power of doing inference in as little as 4 steps. [Learn more here](https://huggingface.co/blog/lcm_lora) or [technical report](https://huggingface.co/papers/2311.05556)
-
-### Image to Image ControlNet Canny LoRa
-
-```bash
-python server/main.py --reload --pipeline controlnetLoraSD15
-```
-
-or SDXL, note that SDXL is slower than SD15 since the inference runs on 1024x1024 images
-
-```bash
-python server/main.py --reload --pipeline controlnetLoraSDXL
-```
-
-### Text to Image
-
-```bash
-python server/main.py --reload --pipeline txt2imgLora
-```
-
-```bash
-python server/main.py --reload --pipeline txt2imgLoraSDXL
-```
+This implementation of RTLCM uses Gfx2Cuda to write tensors directly to texture buffers. Currently, Gfx2Cuda only supports DX11.
+https://github.com/SvenDH/gfx2cuda
 
 # Available Pipelines
 
-#### [LCM](https://huggingface.co/SimianLuo/LCM_Dreamshaper_v7)
-
-`img2img`  
-`txt2img`  
-`controlnet`  
-`txt2imgLora`  
-`controlnetLoraSD15`
-
-#### [SD15](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
-
-`controlnetLoraSDXL`  
-`txt2imgLoraSDXL`
-
-#### [SDXL Turbo](https://huggingface.co/stabilityai/sd-xl-turbo)
-
-`img2imgSDXLTurbo`  
-`controlnetSDXLTurbo`
-
-#### [SDTurbo](https://huggingface.co/stabilityai/sd-turbo)
-
-`img2imgSDTurbo`  
-`controlnetSDTurbo`
-
-#### [Segmind-Vega](https://huggingface.co/segmind/Segmind-Vega)
-
-`controlnetSegmindVegaRT`  
-`img2imgSegmindVegaRT`
+See ./pipelines
+When using the --pipeline flag, use the name of the file without the .py extension
+E.g. --pipeline img2imgSDXL-Lightning
 
 ### Setting environment variables
 
