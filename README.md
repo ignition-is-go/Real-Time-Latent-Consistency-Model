@@ -11,7 +11,7 @@ conda create -n rtlcm python=3.10
 conda activate rtlcm
 python3 -m pip install --upgrade pip
 install.bat
-python3 main.py --reload --pipeline img2imgSDXL-Lightning --sfast --onediff
+python3 main.py --reload --pipeline img2imgSDXL-Lightning --sfast --onediff --debug
 ```
 
 ## Gfx2Cuda
@@ -25,6 +25,7 @@ https://github.com/SvenDH/gfx2cuda
 See ./pipelines
 
 When using the --pipeline flag, use the name of the file without the .py extension
+
 E.g. --pipeline img2imgSDXL-Lightning
 
 ### Setting environment variables
