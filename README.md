@@ -1,14 +1,8 @@
----
-title: RTLCM-Gfx2Cuda
----
-
 # Real-Time Latent Consistency Model
 
 A fork of https://github.com/radames/Real-Time-Latent-Consistency-Model
 
-## Running Locally
-
-You need Windows, DX11, CUDA, and Python 3.10
+To run locally you need Windows, DX11, CUDA, and Python 3.10
 
 ## Installation and Usage Example (Using Conda)
 
