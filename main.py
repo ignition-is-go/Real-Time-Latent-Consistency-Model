@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, HTTPException
+from fastapi import FastAPI, WebSocket
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -17,7 +17,6 @@ from device import device, torch_dtype
 import os
 import time
 import torch
-import gfx2cuda as g2c
 
 THROTTLE = 1.0 / 120
 

@@ -2,16 +2,12 @@
 
 A fork of https://github.com/radames/Real-Time-Latent-Consistency-Model
 
-To run locally you need Windows, DX11, CUDA, and Python 3.10
+To run locally you need Windows, DX11, CUDA 12.1, and uv (python tool)
 
 ## Installation and Usage Example (Using Conda)
 
 ```bash
-conda create -n rtlcm python=3.10
-conda activate rtlcm
-python3 -m pip install --upgrade pip
-install.bat
-python3 main.py --reload --pipeline img2imgSDXL-Lightning --sfast --onediff --debug
+uv run main.py --reload --pipeline img2imgSDXL-Lightning --sfast --onediff --debug
 ```
 
 ## Gfx2Cuda
